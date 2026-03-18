@@ -1,54 +1,8 @@
 use raylib::prelude::*;
 
-trait Shape {
-    fn draw(&self, d: &mut RaylibTextureMode<'_, RaylibHandle>);
-    fn get_transform(&self) -> &ObjectTransform;
-    fn set_transform(&mut self, new_transform: ObjectTransform);
-    fn get_color(&self) -> &Color;
-    fn clone_box(&self) -> Box<dyn Shape>;
-}
-
-struct Keyframe {
-    frame: i32,
-    new_state: ObjectTransform,
-    easer_type: ease::EaseFn,
-}
-
-#[derive(Clone)]
-struct ObjectTransform {
-    rotation: f32,
-    size: Vector2,
-    position: Vector2,
-}
-
-struct TextShape {
-    text: String,
-    transform: ObjectTransform,
-    color: Color,
-}
-
-struct PolygonShape {
-    points: i32,
-    transform: ObjectTransform,
-    color: Color,
-}
-
-struct Layout {
-    timeline_frame_width: i32,
-    timeline_layer_height: i32,
-    timeline_buttons_height: i32,
-    timeline_buttons_width: i32,
-}
-
-struct Object {
-    shape: Box<dyn Shape>,
-    keyframes: Option<Vec<Keyframe>>,
-    start_time: i32,
-    length: i32,
-    name: String,
-}
-
 mod struct_impls;
+mod structs;
+use crate::structs::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut rl, rt) = init()
@@ -60,48 +14,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     rl.set_target_fps(60);
     rl.set_window_min_size(640, 640);
     let name_field = rl.measure_text(&"W".repeat(16), 10);
-    let text = TextShape::new(
-        String::from("HELLO"),
-        ObjectTransform::new(0., Vector2::new(20., 0.), Vector2::new(100., 384.)),
-        Color::WHITE,
-    );
-    let keyframe_1 = Keyframe::new(
-        10,
-        ObjectTransform::new(70., Vector2::new(20., 40.), Vector2::new(400., 384.)),
-        ease::linear_none,
-    );
-    let keyframe_2 = Keyframe::new(
-        20,
-        ObjectTransform::new(170., Vector2::new(20., 40.), Vector2::new(200., 384.)),
-        ease::linear_none,
-    );
-    let text_object = Object::new(
-        Box::new(text),
-        Some(vec![keyframe_1, keyframe_2]),
-        0,
-        64,
-        String::from("Text Demo"),
-    );
 
-    let mut objects: Vec<Object> = vec![];
-    let text = TextShape::new(
-        String::from("Lorem Ipsum"),
-        ObjectTransform::new(0., Vector2::new(20., 0.), Vector2::new(200., 384.)),
-        Color::RED,
-    );
-    let temp_object = Object::new(Box::new(text), None, 0, 64, String::from("Lorem Text Demo"));
-
-    objects.push(temp_object);
-    objects.push(text_object);
+    let mut layout = Layout::new(32, 32, 18, 18);
+    let mut project = Project::new(vec![], 24., 256, layout, None, Vector2::new(320., 240.));
     let mut current_frame: i32 = 0;
     let mut frame_timer: f32 = 0.;
     let mut timeline_view_offset: i32 = 0;
-    let mut frames_per_second: f32 = 1. / 24.;
-    let mut maximum_frames: i32 = 256;
-    let mut selected_object: Option<usize> = None;
+    let mut frame_each_second: f32 = 1. / project.frame_rate;
     let mut viewport: RenderTexture2D = rl.load_render_texture(&rt, 512, 512)?;
     let mut playing: bool = false;
-    let mut layout = Layout::new(32, 32, 18, 18);
     let mut swap_request: Option<(usize, usize)> = None;
     let keys = [
         KeyboardKey::KEY_PERIOD,
@@ -115,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rl.begin_texture_mode(&rt, &mut viewport);
             viewport_surface.clear_background(Color::BLACK);
 
-            for o in &objects {
+            for o in &project.objects {
                 let is_active =
                     current_frame >= o.start_time && current_frame <= o.start_time + o.length;
                 if is_active {
@@ -166,32 +87,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Color::WHITE,
         );
 
-        let objects_count = objects.len() as i32;
+        let objects_count = project.objects.len() as i32;
         // draw timeline and objects
-        let mut timeline_height = screen_height - (layout.timeline_layer_height * objects_count);
-        timeline_height -= layout.timeline_buttons_height;
+        let mut timeline_height =
+            screen_height - (project.layout.timeline_layer_height * objects_count);
+        timeline_height -= project.layout.timeline_buttons_height;
 
-        for (i, o) in objects.iter().enumerate().rev() {
-            let mut current_x = layout.timeline_frame_width * -timeline_view_offset;
+        for (i, o) in project.objects.iter().enumerate().rev() {
+            let mut current_x = project.layout.timeline_frame_width * -timeline_view_offset;
             let mut inner_timeline_height = timeline_height;
-            inner_timeline_height += i as i32 * layout.timeline_layer_height;
-            current_x += name_field + 0;
+            inner_timeline_height += i as i32 * project.layout.timeline_layer_height;
+            current_x += name_field;
 
             // timeline bg
             d.draw_rectangle(
                 current_x,
                 inner_timeline_height,
                 screen_width - current_x,
-                layout.timeline_layer_height,
+                project.layout.timeline_layer_height,
                 Color::DARKGRAY,
             );
 
-            current_x += o.start_time * layout.timeline_frame_width;
+            current_x += o.start_time * project.layout.timeline_frame_width;
             d.draw_rectangle(
                 current_x,
                 inner_timeline_height,
-                (o.length + 1) * layout.timeline_frame_width,
-                layout.timeline_layer_height,
+                (o.length + 1) * project.layout.timeline_frame_width,
+                project.layout.timeline_layer_height,
                 o.shape.get_color(),
             );
 
@@ -207,12 +129,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for key in k.iter() {
                     frame_offset += key.frame;
                     let local_x = current_x
-                        + (layout.timeline_frame_width * frame_offset)
-                        + layout.timeline_frame_width / 2;
+                        + (project.layout.timeline_frame_width * frame_offset)
+                        + project.layout.timeline_frame_width / 2;
                     d.draw_poly(
                         Vector2::new(
                             local_x as f32,
-                            (inner_timeline_height + (layout.timeline_layer_height / 2)) as f32,
+                            (inner_timeline_height + (project.layout.timeline_layer_height / 2))
+                                as f32,
                         ),
                         4,
                         5.,
@@ -222,7 +145,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     d.draw_poly_lines(
                         Vector2::new(
                             local_x as f32,
-                            (inner_timeline_height + (layout.timeline_layer_height / 2)) as f32,
+                            (inner_timeline_height + (project.layout.timeline_layer_height / 2))
+                                as f32,
                         ),
                         4,
                         5.,
@@ -232,12 +156,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            for i in 0..maximum_frames {
+            for i in 0..project.maximum_frames {
                 d.draw_rectangle(
-                    (name_field + 0) + (i * layout.timeline_frame_width) - 1,
+                    (name_field) + (i * project.layout.timeline_frame_width) - 1,
                     inner_timeline_height,
                     1,
-                    layout.timeline_layer_height,
+                    project.layout.timeline_layer_height,
                     Color::GRAY,
                 );
             }
@@ -245,16 +169,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             d.draw_text(
                 &o.name,
                 current_x,
-                inner_timeline_height + (layout.timeline_layer_height / 3),
+                inner_timeline_height + (project.layout.timeline_layer_height / 3),
                 10,
                 opposite_color,
             );
 
             d.draw_rectangle_lines(
                 current_x,
-                (timeline_height + 1) + (layout.timeline_layer_height * i as i32),
-                (o.length + 1) * layout.timeline_frame_width,
-                layout.timeline_layer_height - 1,
+                (timeline_height + 1) + (project.layout.timeline_layer_height * i as i32),
+                (o.length + 1) * project.layout.timeline_frame_width,
+                project.layout.timeline_layer_height - 1,
                 opposite_color,
             );
         }
@@ -263,7 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             format!(
                 "frame: {} | sec: {:.3}",
                 current_frame + 1,
-                current_frame as f32 / (1. / frames_per_second)
+                current_frame as f32 / (1. / frame_each_second)
             )
             .as_str(),
             0,
@@ -272,31 +196,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Color::WHITE,
         );
         if d.is_key_down(KeyboardKey::KEY_LEFT_ALT) {
-            for i in 0 - current_frame..maximum_frames - current_frame {
+            for i in 0 - current_frame..project.maximum_frames - current_frame {
                 let counter = format!("{i}");
-                let x = ((layout.timeline_frame_width * -timeline_view_offset) + name_field)
-                    + (i * layout.timeline_frame_width)
-                    + current_frame * layout.timeline_frame_width
-                    + ((layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
+                let x = ((project.layout.timeline_frame_width * -timeline_view_offset)
+                    + name_field)
+                    + (i * project.layout.timeline_frame_width)
+                    + current_frame * project.layout.timeline_frame_width
+                    + ((project.layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
                 d.draw_text(&counter, x, timeline_height - 10, 10, Color::WHITE);
             }
         } else {
-            for i in 0..maximum_frames {
+            for i in 0..project.maximum_frames {
                 let counter = format!("{i}");
                 if timeline_view_offset >= i {
                     continue;
                 }
-                let x = ((layout.timeline_frame_width * -timeline_view_offset) + name_field)
-                    + (i * layout.timeline_frame_width)
-                    - layout.timeline_frame_width
-                    + ((layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
+                let x = ((project.layout.timeline_frame_width * -timeline_view_offset)
+                    + name_field)
+                    + (i * project.layout.timeline_frame_width)
+                    - project.layout.timeline_frame_width
+                    + ((project.layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
                 d.draw_text(&counter, x, timeline_height - 10, 10, Color::WHITE);
             }
         }
 
         // scrubber
-        let scrubber_x =
-            name_field + ((current_frame - timeline_view_offset) * layout.timeline_frame_width);
+        let scrubber_x = name_field
+            + ((current_frame - timeline_view_offset) * project.layout.timeline_frame_width);
         if timeline_view_offset > current_frame {
             d.draw_poly(
                 Vector2::new(name_field as f32 - 6., timeline_height as f32 - 6.),
@@ -318,9 +244,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if playing {
             frame_timer += d.get_frame_time();
-            while frame_timer >= frames_per_second {
+            while frame_timer >= frame_each_second {
                 current_frame += 1;
-                frame_timer -= frames_per_second
+                frame_timer -= frame_each_second
             }
         }
 
@@ -328,8 +254,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             d.draw_rectangle(
                 scrubber_x,
                 timeline_height,
-                layout.timeline_frame_width,
-                objects_count * layout.timeline_layer_height,
+                project.layout.timeline_frame_width,
+                objects_count * project.layout.timeline_layer_height,
                 Color::new(0, 0, 255, 64),
             );
         }
@@ -337,14 +263,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let icon_arrow_up = d.gui_icon_text(GuiIconName::ICON_ARROW_UP_FILL, "");
         let icon_arrow_down = d.gui_icon_text(GuiIconName::ICON_ARROW_DOWN_FILL, "");
         // object labels
-        for (i, o) in objects.iter().enumerate().rev() {
-            let mut y = i as i32 * layout.timeline_layer_height;
+        for (i, o) in project.objects.iter().enumerate().rev() {
+            let mut y = i as i32 * project.layout.timeline_layer_height;
             y += timeline_height;
 
-            let rect = rrect(0, y, name_field, layout.timeline_layer_height);
+            let rect = rrect(0, y, name_field, project.layout.timeline_layer_height);
 
             // label
-            if let Some(ref o) = selected_object {
+            if let Some(ref o) = project.selected_object {
                 if i == *o {
                     d.draw_rectangle_rec(rect, Color::GRAY);
                 } else {
@@ -356,29 +282,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             d.draw_line(
                 0,
-                y + layout.timeline_layer_height,
+                y + project.layout.timeline_layer_height,
                 name_field,
-                y + layout.timeline_layer_height,
+                y + project.layout.timeline_layer_height,
                 Color::WHITE,
             );
             d.draw_text(
                 format!("{i}. {}", &o.name).as_str(),
                 1,
-                y + (layout.timeline_layer_height / 3),
+                y + (project.layout.timeline_layer_height / 3),
                 10,
                 Color::WHITE,
             );
 
-            let rect = rrect(0, y, name_field - 16, layout.timeline_layer_height);
+            let rect = rrect(0, y, name_field - 16, project.layout.timeline_layer_height);
             if rect.check_collision_point_rec(d.get_mouse_position()) {
                 if d.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
-                    selected_object = Some(i);
+                    project.selected_object = Some(i);
                 }
             }
 
             if ((i as i32) != 0)
                 && d.gui_button(
-                    rrect(name_field - 16, y, 16, layout.timeline_layer_height / 2),
+                    rrect(
+                        name_field - 16,
+                        y,
+                        16,
+                        project.layout.timeline_layer_height / 2,
+                    ),
                     &icon_arrow_up,
                 )
             {
@@ -391,9 +322,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && d.gui_button(
                     rrect(
                         name_field - 16,
-                        y + layout.timeline_layer_height / 2,
+                        y + project.layout.timeline_layer_height / 2,
                         16,
-                        layout.timeline_layer_height / 2,
+                        project.layout.timeline_layer_height / 2,
                     ),
                     &icon_arrow_down,
                 )
@@ -405,55 +336,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some((a, b)) = swap_request {
-            if let Some(ref o) = selected_object {
+            if let Some(ref o) = project.selected_object {
                 if *o == a {
-                    selected_object = Some(b);
+                    project.selected_object = Some(b);
                 } else if *o == b {
-                    selected_object = Some(a);
+                    project.selected_object = Some(a);
                 }
             }
-            objects.swap(a, b);
+            project.objects.swap(a, b);
             swap_request = None;
         }
 
-        if let Some(ref o) = selected_object {
-            let temp_obj = objects.get(*o);
+        if let Some(ref o) = project.selected_object {
+            let temp_obj = project.objects.get(*o);
             if let Some(tmp_obj_info) = temp_obj {
                 let text_name = format!("{o}. {}", tmp_obj_info.name);
                 d.draw_text(&text_name, 1, 1, 10, Color::WHITE);
             }
         }
 
-        let tlbh = timeline_height + (layout.timeline_layer_height * objects_count);
+        let tlbh = timeline_height + (project.layout.timeline_layer_height * objects_count);
         if d.gui_button(
             rrect(
                 0,
                 tlbh,
-                layout.timeline_buttons_width,
-                layout.timeline_buttons_height,
+                project.layout.timeline_buttons_width,
+                project.layout.timeline_buttons_height,
             ),
             "-",
         ) {
-            if layout.timeline_frame_width >= 19 {
-                layout.timeline_frame_width -= 1;
+            if project.layout.timeline_frame_width >= 19 {
+                project.layout.timeline_frame_width -= 1;
             }
         }
         if d.gui_button(
             rrect(
-                layout.timeline_buttons_width,
+                project.layout.timeline_buttons_width,
                 tlbh,
-                layout.timeline_buttons_width,
-                layout.timeline_buttons_height,
+                project.layout.timeline_buttons_width,
+                project.layout.timeline_buttons_height,
             ),
             "+",
         ) {
-            layout.timeline_frame_width += 1;
+            project.layout.timeline_frame_width += 1;
         }
 
         d.draw_text(
-            format!("Zoom: {}", layout.timeline_frame_width).as_str(),
-            layout.timeline_buttons_width * 2,
-            tlbh + (layout.timeline_buttons_height / 2) - 4,
+            format!("Zoom: {}", project.layout.timeline_frame_width).as_str(),
+            project.layout.timeline_buttons_width * 2,
+            tlbh + (project.layout.timeline_buttons_height / 2) - 4,
             10,
             Color::WHITE,
         );
@@ -462,8 +393,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rrect(
                 screen_width - 16,
                 tlbh,
-                layout.timeline_buttons_width,
-                layout.timeline_buttons_height,
+                project.layout.timeline_buttons_width,
+                project.layout.timeline_buttons_height,
             ),
             "#30#",
         ) {
@@ -475,7 +406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let temp_object =
                 Object::new(Box::new(text), None, 0, 64, String::from("Lorem Text Demo"));
 
-            objects.push(temp_object);
+            project.objects.push(temp_object);
         }
     }
     Ok(())

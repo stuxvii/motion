@@ -1,6 +1,12 @@
-use raylib::{RaylibHandle, color::Color, ease::*, math::Vector2, prelude::{RaylibDraw, RaylibTextureMode}};
+use raylib::{
+    RaylibHandle,
+    color::Color,
+    ease::*,
+    math::Vector2,
+    prelude::{RaylibDraw, RaylibTextureMode},
+};
 
-use crate::{Keyframe, Layout, Object, ObjectTransform, PolygonShape, Shape, TextShape};
+use crate::structs::*;
 
 impl Shape for TextShape {
     fn get_color(&self) -> &raylib::prelude::Color {
@@ -88,6 +94,26 @@ impl PolygonShape {
     }
 }
 
+impl Project {
+    pub fn new(
+        objects: Vec<Object>,
+        frame_rate: f32,
+        maximum_frames: i32,
+        layout: Layout,
+        selected_object: Option<usize>,
+        viewport: Vector2,
+    ) -> Project {
+        Project {
+            objects,
+            frame_rate,
+            maximum_frames,
+            layout,
+            selected_object,
+            viewport_dimensions: viewport,
+        }
+    }
+}
+
 impl ObjectTransform {
     pub fn new(rotation: f32, size: Vector2, position: Vector2) -> ObjectTransform {
         ObjectTransform {
@@ -100,22 +126,39 @@ impl ObjectTransform {
 
 impl Keyframe {
     pub fn new(frame: i32, new_state: ObjectTransform, easer_type: EaseFn) -> Self {
-        Keyframe { frame, new_state, easer_type }
+        Keyframe {
+            frame,
+            new_state,
+            easer_type,
+        }
     }
 
     pub fn step(&self, c_s: &ObjectTransform, c_f_r: i32) -> ObjectTransform {
         let progress = (c_f_r as f32 - 1.0) / (self.frame as f32);
         let progress = progress.clamp(0.0, 1.0);
-        
-        let r = Tween::new(self.easer_type, c_s.rotation, self.new_state.rotation, 1.0).apply(progress);
 
-        let p_x =
-            Tween::new(self.easer_type, c_s.position.x, self.new_state.position.x, 1.0).apply(progress);
-        let p_y =
-            Tween::new(self.easer_type, c_s.position.y, self.new_state.position.y, 1.0).apply(progress);
+        let r =
+            Tween::new(self.easer_type, c_s.rotation, self.new_state.rotation, 1.0).apply(progress);
 
-        let s_x = Tween::new(self.easer_type, c_s.size.x, self.new_state.size.x, 1.0).apply(progress);
-        let s_y = Tween::new(self.easer_type, c_s.size.y, self.new_state.size.y, 1.0).apply(progress);
+        let p_x = Tween::new(
+            self.easer_type,
+            c_s.position.x,
+            self.new_state.position.x,
+            1.0,
+        )
+        .apply(progress);
+        let p_y = Tween::new(
+            self.easer_type,
+            c_s.position.y,
+            self.new_state.position.y,
+            1.0,
+        )
+        .apply(progress);
+
+        let s_x =
+            Tween::new(self.easer_type, c_s.size.x, self.new_state.size.x, 1.0).apply(progress);
+        let s_y =
+            Tween::new(self.easer_type, c_s.size.y, self.new_state.size.y, 1.0).apply(progress);
 
         ObjectTransform {
             rotation: r,
@@ -165,7 +208,7 @@ impl Object {
                     current_transform = tmp_transform;
                     break;
                 } else {
-                    break; 
+                    break;
                 }
             }
         }
@@ -187,7 +230,7 @@ impl Layout {
             timeline_frame_width: tl_f_w.clamp(12, 256),
             timeline_layer_height: tl_l_h.clamp(12, 256),
             timeline_buttons_height: tl_b_h.clamp(11, 32),
-            timeline_buttons_width: tl_b_w.clamp(11, 32)
+            timeline_buttons_width: tl_b_w.clamp(11, 32),
         }
     }
 }
