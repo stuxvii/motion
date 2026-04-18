@@ -18,7 +18,7 @@ pub trait Shape {
 }
 
 pub struct Keyframe {
-    pub frame: i32,
+    pub frame: f32,
     pub new_state: ObjectTransform,
     pub easer_type: ease::EaseFn,
 }
@@ -52,7 +52,7 @@ pub struct Layout {
 pub struct Object {
     pub shape: Box<dyn Shape>,
     pub keyframes: Option<Vec<Keyframe>>,
-    pub start_time: i32,
-    pub length: i32,
+    pub start_time: f32,
+    pub length: f32,
     pub name: String,
 }

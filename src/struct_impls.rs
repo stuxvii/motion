@@ -125,7 +125,7 @@ impl ObjectTransform {
 }
 
 impl Keyframe {
-    pub fn new(frame: i32, new_state: ObjectTransform, easer_type: EaseFn) -> Self {
+    pub fn new(frame: f32, new_state: ObjectTransform, easer_type: EaseFn) -> Self {
         Keyframe {
             frame,
             new_state,
@@ -133,8 +133,8 @@ impl Keyframe {
         }
     }
 
-    pub fn step(&self, c_s: &ObjectTransform, c_f_r: i32) -> ObjectTransform {
-        let progress = (c_f_r as f32 - 1.0) / (self.frame as f32);
+    pub fn step(&self, c_s: &ObjectTransform, c_f_r: f32) -> ObjectTransform {
+        let progress = (c_f_r - 1.0) / (self.frame);
         let progress = progress.clamp(0.0, 1.0);
 
         let r =
@@ -172,8 +172,8 @@ impl Object {
     pub fn new(
         shape: Box<dyn Shape>,
         keyframes: Option<Vec<Keyframe>>,
-        start_time: i32,
-        length: i32,
+        start_time: f32,
+        length: f32,
         name: String,
     ) -> Self {
         Object {
@@ -185,7 +185,7 @@ impl Object {
         }
     }
 
-    pub fn get_transform_at_frame(&self, current_frame: i32) -> ObjectTransform {
+    pub fn get_transform_at_frame(&self, current_frame: f32) -> ObjectTransform {
         let mut current_transform = self.shape.get_transform().clone();
 
         if current_frame < self.start_time {
@@ -193,7 +193,7 @@ impl Object {
         }
 
         if let Some(keyframes) = &self.keyframes {
-            let mut frames_passed = 0;
+            let mut frames_passed = 0.;
             let active_frame = current_frame - self.start_time;
 
             for keyframe in keyframes {
@@ -216,7 +216,7 @@ impl Object {
         current_transform.clone()
     }
 
-    pub fn render(&self, d: &mut RaylibTextureMode<'_, RaylibHandle>, current_frame: i32) {
+    pub fn render(&self, d: &mut RaylibTextureMode<'_, RaylibHandle>, current_frame: f32) {
         let current_transform = self.get_transform_at_frame(current_frame);
         let mut temp_shape = self.shape.clone_box();
         temp_shape.set_transform(current_transform);

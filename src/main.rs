@@ -5,57 +5,43 @@ mod structs;
 use crate::structs::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (mut rl, rt) = init()
-        .width(800)
-        .height(768)
-        .title("animation")
-        .resizable()
-        .build();
+    let (mut rl, rt) = init().width(800).height(768).title("animation").resizable().build();
     rl.set_target_fps(60);
     rl.set_window_min_size(640, 640);
     let name_field = rl.measure_text(&"W".repeat(16), 10);
 
     let mut layout = Layout::new(32, 32, 18, 18);
     let mut project = Project::new(vec![], 24., 256, layout, None, Vector2::new(320., 240.));
-    let mut current_frame: i32 = 0;
+    let mut current_time: f32 = 0.;
     let mut frame_timer: f32 = 0.;
     let mut timeline_view_offset: i32 = 0;
     let mut frame_each_second: f32 = 1. / project.frame_rate;
     let mut viewport: RenderTexture2D = rl.load_render_texture(&rt, 512, 512)?;
     let mut playing: bool = false;
     let mut swap_request: Option<(usize, usize)> = None;
-    let keys = [
-        KeyboardKey::KEY_PERIOD,
-        KeyboardKey::KEY_COMMA,
-        KeyboardKey::KEY_SPACE,
-    ];
+
+    let keys = [KeyboardKey::KEY_PERIOD, KeyboardKey::KEY_COMMA, KeyboardKey::KEY_SPACE];
 
     while !rl.window_should_close() {
         {
-            let mut viewport_surface: RaylibTextureMode<'_, RaylibHandle> =
-                rl.begin_texture_mode(&rt, &mut viewport);
+            let mut viewport_surface: RaylibTextureMode<'_, RaylibHandle> = rl.begin_texture_mode(&rt, &mut viewport);
             viewport_surface.clear_background(Color::BLACK);
 
             for o in &project.objects {
-                let is_active =
-                    current_frame >= o.start_time && current_frame <= o.start_time + o.length;
+                let is_active = current_time >= o.start_time && current_time <= o.start_time + o.length;
                 if is_active {
-                    o.render(&mut viewport_surface, current_frame);
+                    o.render(&mut viewport_surface, current_time);
                 }
             }
 
             // Reason we put it here and not below using `d`, is so it keeps sync with the drawn objects and isnt delayed by 1 frame (jussa nitpick tho)
             for key in keys {
-                if viewport_surface.is_key_pressed(key)
-                    || viewport_surface.is_key_pressed_repeat(key)
-                {
+                if viewport_surface.is_key_pressed(key) || viewport_surface.is_key_pressed_repeat(key) {
                     match key {
-                        KeyboardKey::KEY_PERIOD => {
-                            current_frame += 1;
-                        }
+                        KeyboardKey::KEY_PERIOD => current_time += frame_each_second,
                         KeyboardKey::KEY_COMMA => {
-                            if current_frame >= 1 {
-                                current_frame -= 1;
+                            if current_time >= frame_each_second {
+                                current_time -= frame_each_second;
                             }
                         }
                         KeyboardKey::KEY_SPACE => playing = !playing,
@@ -66,31 +52,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut d = rl.begin_drawing(&rt);
+        d.clear_background(Color::GRAY);
         if d.get_mouse_wheel_move() > 0. || timeline_view_offset > 0 {
             timeline_view_offset += d.get_mouse_wheel_move() as i32;
         }
 
         let screen_width = d.get_render_width();
         let screen_height = d.get_render_height();
-        d.clear_background(Color::GRAY);
 
         // show the render output on screen
         d.draw_texture_rec(
             viewport.texture(),
-            rrect(
-                0,
-                0,
-                viewport.texture.width as f32,
-                -viewport.texture.height as f32,
-            ),
+            rrect(0, 0, viewport.texture.width as f32, -viewport.texture.height as f32),
             Vector2::new((screen_width as f32) - (viewport.texture.width as f32), 0.),
             Color::WHITE,
         );
 
         let objects_count = project.objects.len() as i32;
         // draw timeline and objects
-        let mut timeline_height =
-            screen_height - (project.layout.timeline_layer_height * objects_count);
+        let mut timeline_height = screen_height - (project.layout.timeline_layer_height * objects_count);
         timeline_height -= project.layout.timeline_buttons_height;
 
         for (i, o) in project.objects.iter().enumerate().rev() {
@@ -108,46 +88,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Color::DARKGRAY,
             );
 
-            current_x += o.start_time * project.layout.timeline_frame_width;
+            current_x += o.start_time as i32 * project.layout.timeline_frame_width;
             d.draw_rectangle(
                 current_x,
                 inner_timeline_height,
-                (o.length + 1) * project.layout.timeline_frame_width,
+                (o.length + 1.) as i32 * project.layout.timeline_frame_width,
                 project.layout.timeline_layer_height,
                 o.shape.get_color(),
             );
 
-            let opposite_color = Color::new(
-                255 - o.shape.get_color().r,
-                255 - o.shape.get_color().g,
-                255 - o.shape.get_color().b,
-                255,
-            );
+            let opposite_color = Color::new(255 - o.shape.get_color().r, 255 - o.shape.get_color().g, 255 - o.shape.get_color().b, 255);
 
             if let Some(k) = &o.keyframes {
-                let mut frame_offset = 0;
+                let mut frame_offset = 0.;
                 for key in k.iter() {
                     frame_offset += key.frame;
-                    let local_x = current_x
-                        + (project.layout.timeline_frame_width * frame_offset)
-                        + project.layout.timeline_frame_width / 2;
+                    let local_x = current_x + (project.layout.timeline_frame_width * frame_offset as i32) + project.layout.timeline_frame_width / 2;
                     d.draw_poly(
-                        Vector2::new(
-                            local_x as f32,
-                            (inner_timeline_height + (project.layout.timeline_layer_height / 2))
-                                as f32,
-                        ),
+                        Vector2::new(local_x as f32, (inner_timeline_height + (project.layout.timeline_layer_height / 2)) as f32),
                         4,
                         5.,
                         0.,
                         Color::WHITE,
                     );
                     d.draw_poly_lines(
-                        Vector2::new(
-                            local_x as f32,
-                            (inner_timeline_height + (project.layout.timeline_layer_height / 2))
-                                as f32,
-                        ),
+                        Vector2::new(local_x as f32, (inner_timeline_height + (project.layout.timeline_layer_height / 2)) as f32),
                         4,
                         5.,
                         0.,
@@ -177,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             d.draw_rectangle_lines(
                 current_x,
                 (timeline_height + 1) + (project.layout.timeline_layer_height * i as i32),
-                (o.length + 1) * project.layout.timeline_frame_width,
+                (o.length + 1.) as i32 * project.layout.timeline_frame_width,
                 project.layout.timeline_layer_height - 1,
                 opposite_color,
             );
@@ -186,8 +151,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         d.draw_text(
             format!(
                 "frame: {} | sec: {:.3}",
-                current_frame + 1,
-                current_frame as f32 / (1. / frame_each_second)
+                (current_time / frame_each_second) as i32,
+                current_time / frame_each_second
             )
             .as_str(),
             0,
@@ -196,12 +161,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Color::WHITE,
         );
         if d.is_key_down(KeyboardKey::KEY_LEFT_ALT) {
-            for i in 0 - current_frame..project.maximum_frames - current_frame {
+            for i in 0 - (current_time / frame_each_second) as i32..project.maximum_frames - (current_time / frame_each_second) as i32 {
                 let counter = format!("{i}");
-                let x = ((project.layout.timeline_frame_width * -timeline_view_offset)
-                    + name_field)
+                let x = ((project.layout.timeline_frame_width * -timeline_view_offset) + name_field)
                     + (i * project.layout.timeline_frame_width)
-                    + current_frame * project.layout.timeline_frame_width
+                    + (current_time / frame_each_second) as i32 * project.layout.timeline_frame_width
                     + ((project.layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
                 d.draw_text(&counter, x, timeline_height - 10, 10, Color::WHITE);
             }
@@ -211,9 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if timeline_view_offset >= i {
                     continue;
                 }
-                let x = ((project.layout.timeline_frame_width * -timeline_view_offset)
-                    + name_field)
-                    + (i * project.layout.timeline_frame_width)
+                let x = ((project.layout.timeline_frame_width * -timeline_view_offset) + name_field) + (i * project.layout.timeline_frame_width)
                     - project.layout.timeline_frame_width
                     + ((project.layout.timeline_frame_width - d.measure_text(&counter, 10)) / 2);
                 d.draw_text(&counter, x, timeline_height - 10, 10, Color::WHITE);
@@ -221,9 +183,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // scrubber
-        let scrubber_x = name_field
-            + ((current_frame - timeline_view_offset) * project.layout.timeline_frame_width);
-        if timeline_view_offset > current_frame {
+        let scrubber_x = name_field + (((current_time / frame_each_second) as i32 - timeline_view_offset) * project.layout.timeline_frame_width);
+        if timeline_view_offset > (current_time / frame_each_second) as i32 {
             d.draw_poly(
                 Vector2::new(name_field as f32 - 6., timeline_height as f32 - 6.),
                 3,
@@ -245,12 +206,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if playing {
             frame_timer += d.get_frame_time();
             while frame_timer >= frame_each_second {
-                current_frame += 1;
+                current_time += d.get_frame_time();
                 frame_timer -= frame_each_second
             }
         }
 
-        if timeline_view_offset <= current_frame {
+        if timeline_view_offset <= (current_time * frame_each_second) as i32 {
             d.draw_rectangle(
                 scrubber_x,
                 timeline_height,
@@ -302,17 +263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            if ((i as i32) != 0)
-                && d.gui_button(
-                    rrect(
-                        name_field - 16,
-                        y,
-                        16,
-                        project.layout.timeline_layer_height / 2,
-                    ),
-                    &icon_arrow_up,
-                )
-            {
+            if ((i as i32) != 0) && d.gui_button(rrect(name_field - 16, y, 16, project.layout.timeline_layer_height / 2), &icon_arrow_up) {
                 if i > 0 {
                     swap_request = Some((i, i - 1));
                 }
@@ -349,20 +300,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some(ref o) = project.selected_object {
             let temp_obj = project.objects.get(*o);
-            if let Some(tmp_obj_info) = temp_obj {
+            if let Some(mut tmp_obj_info) = temp_obj {
                 let text_name = format!("{o}. {}", tmp_obj_info.name);
-                d.draw_text(&text_name, 1, 1, 10, Color::WHITE);
+                d.draw_text(&text_name, 1, 1, 20, Color::WHITE);
+                let mut transform_atm: ObjectTransform = tmp_obj_info.get_transform_at_frame(current_time);
+                d.gui_spinner(
+                    rrect(1, 21, 100, 12),
+                    "X",
+                    &mut (transform_atm.position.x as i32),
+                    i32::min_value(),
+                    i32::max_value(),
+                    true,
+                );
+                // let mut obj: &Object = tmp_obj_info;
+                // obj.shape.set_transform(transform_atm);
             }
         }
 
         let tlbh = timeline_height + (project.layout.timeline_layer_height * objects_count);
         if d.gui_button(
-            rrect(
-                0,
-                tlbh,
-                project.layout.timeline_buttons_width,
-                project.layout.timeline_buttons_height,
-            ),
+            rrect(0, tlbh, project.layout.timeline_buttons_width, project.layout.timeline_buttons_height),
             "-",
         ) {
             if project.layout.timeline_frame_width >= 19 {
@@ -403,8 +360,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ObjectTransform::new(0., Vector2::new(20., 0.), Vector2::new(200., 384.)),
                 Color::RED,
             );
-            let temp_object =
-                Object::new(Box::new(text), None, 0, 64, String::from("Lorem Text Demo"));
+            let temp_object = Object::new(Box::new(text), None, 0., frame_each_second * 64., String::from("Lorem Text Demo"));
 
             project.objects.push(temp_object);
         }
